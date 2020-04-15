@@ -624,7 +624,8 @@ void prep_box(RTLIL::Design *design)
 			log_assert(num_outputs == 1);
 
 			ss << log_id(module) << " " << r.first->second.as_int();
-			ss << " " << (module->get_bool_attribute(ID::whitebox) ? "1" : "0");
+			log_assert(module->get_bool_attribute(ID::whitebox));
+			ss << " " << "1";
 			ss << " " << num_inputs << " " << num_outputs << std::endl;
 
 			ss << "#";
@@ -642,6 +643,9 @@ void prep_box(RTLIL::Design *design)
 			ss << std::endl;
 
 			auto &t = timing.setup_module(module).required;
+			if (t.empty())
+				log_error("Module '%s' with (* abc9_flop *) has no clk-to-q timing (and thus no connectivity) information.\n", log_id(module));
+
 			first = true;
 			for (auto port_name : module->ports) {
 				auto wire = module->wire(port_name);
@@ -654,8 +658,8 @@ void prep_box(RTLIL::Design *design)
 				log_assert(GetSize(wire) == 1);
 				auto it = t.find(TimingInfo::NameBit(port_name,0));
 				if (it == t.end())
-					// Assume that no setup time means zero
-					ss << 0;
+					// Assume no connectivity if no setup time
+					ss << "-";
 				else {
 					ss << it->second;
 
@@ -726,9 +730,11 @@ void prep_box(RTLIL::Design *design)
 			}
 			ss << std::endl;
 
-			auto &t = timing.setup_module(module).comb;
-			if (t.empty())
-				log_warning("(* abc9_box *) module '%s' has no timing (and thus no connectivity) information.\n", log_id(module));
+			auto &t = timing.setup_module(module);
+			if (t.comb.empty())
+				log_error("Module '%s' with (* abc9_box *) has no timing (and thus no connectivity) information.\n", log_id(module));
+			if (!t.arrival.empty() || !t.required.empty())
+				log_error("Module '%s' with (* abc9_box *) has setup and/or edge-sensitive timing information.\n", log_id(module));
 
 			for (const auto &o : outputs) {
 				first = true;
@@ -737,8 +743,8 @@ void prep_box(RTLIL::Design *design)
 						first = false;
 					else
 						ss << " ";
-					auto jt = t.find(TimingInfo::BitBit(i,o));
-					if (jt == t.end())
+					auto jt = t.comb.find(TimingInfo::BitBit(i,o));
+					if (jt == t.comb.end())
 						ss << "-";
 					else
 						ss << jt->second;
