@@ -181,7 +181,7 @@ void prep_dff_map(RTLIL::Design *design)
 		for (auto cell : module->cells())
 			if (cell->type.in(ID($_DFF_N_), ID($_DFF_P_))) {
 				if (dff_cell)
-					log_error("More than one $_DFF_[NP]_ cell found in module '%s' marked (* abc9_flop *)\n", log_id(module));
+					log_error("Module '%s' with (* abc9_flop *) contains more than one $_DFF_[NP]_ cell.\n", log_id(module));
 				dff_cell = cell;
 
 				// Block sequential synthesis on cells with (* init *) != 1'b0
@@ -207,30 +207,38 @@ void prep_dff_map(RTLIL::Design *design)
 					goto continue_outer_loop;
 				}
 			}
+			else if (cell->type.in(ID($_DFF_NN0_), ID($_DFF_NN1_), ID($_DFF_NP0_), ID($_DFF_NP1_),
+						ID($_DFF_PN0_), ID($_DFF_PN1_), ID($_DFF_PP0_), ID($_DFF_PP1_),
+						ID($__DFFE_NN0), ID($__DFFE_NN1), ID($__DFFE_NP0), ID($__DFFE_NP1),
+						ID($__DFFE_PN0), ID($__DFFE_PN1), ID($__DFFE_PP0), ID($__DFFE_PP1)))
+				log_error("Module '%s' with (* abc9_flop *) contains an asynchronous $_DFFE?_[NP][NP][01]_? cell, which is not supported for sequential synthesis.\n", log_id(module));
 			else if (cell->type.in(ID($specify2), ID($specify3), ID($specrule)))
 				specify_cells.emplace_back(cell);
 		if (!dff_cell)
-			log_error("$_DFF_[NP]_ cell not found in module '%s' marked (* abc9_flop *)\n", log_id(module));
+			log_error("Module '%s' with (* abc9_flop *) does not any contain $_DFF_[NP]_ cells.\n", log_id(module));
 
 		D = dff_cell->getPort(ID::D);
 
-		// Add a dummy enable mux feeding DFF.D to ensure that:
-		//   (i) a driving cell exists, so that 'submod' will have
-		//       an output port
-		//   (ii) DFF.Q will exist in this submodule
 		{
-			auto c = module->addCell(NEW_ID, ID($_MUX_));
+			// Add dummy buffers for all module inputs/outputs
+			//   to ensure that these ports exists in the flop box
+			//   created by later submod pass
+			for (auto port_name : module->ports) {
+				auto port = module->wire(port_name);
+				log_assert(GetSize(port) == 1);
+				auto c = module->addBufGate(NEW_ID, port, module->addWire(NEW_ID));
+				// Need to set (* keep *) otherwise opt_clean
+				//   inside submod will blow it away
+				c->set_bool_attribute(ID::keep);
+			}
+			// Add an additional buffer that drives $_DFF_[NP]_.D
+			//   so that the flop box will have an output
 			auto w = module->addWire(NEW_ID);
-			c->setPort(ID::A, D);
-			c->setPort(ID::B, Q);
-			c->setPort(ID::S, State::S0);
-			c->setPort(ID::Y, w);
+			auto c = module->addBufGate(NEW_ID, D, w);
+			c->set_bool_attribute(ID::keep);
 			dff_cell->setPort(ID::D, w);
 			D = w;
 		}
-
-		if (GetSize(specify_cells) == 0)
-			log_error("Module '%s' marked (* abc9_flop *) contains no specify timing information.\n", log_id(module));
 
 		// Rewrite $specify cells that end with $_DFF_[NP]_.Q
 		//   to $_DFF_[NP]_.D since it will be moved into

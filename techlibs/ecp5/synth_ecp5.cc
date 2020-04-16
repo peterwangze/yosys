@@ -333,7 +333,7 @@ struct SynthEcp5Pass : public ScriptPass
 				run("techmap " + techmap_args);
 
 			if (abc9) {
-				run("read_verilog -icells -lib -specify +/abc9_model.v +/ecp5/abc9_model.v");
+				run("read_verilog -icells -lib -specify +/ecp5/abc9_model.v");
 				std::string abc9_args = " -W 200";
 				if (nowidelut)
 					abc9_args += " -maxlut 4";
