@@ -381,7 +381,7 @@ struct SynthIce40Pass : public ScriptPass
 			}
 			if (!noabc) {
 				if (abc9) {
-					run("read_verilog " + define + " -icells -lib -specify +/abc9_model.v +/ice40/abc9_model.v");
+					run("read_verilog " + define + " -icells -lib -specify +/ice40/abc9_model.v");
 					int wire_delay;
 					if (device_opt == "lp")
 						wire_delay = 400;
